@@ -1,0 +1,70 @@
+version: "3"
+services:
+  timely_db-swarm:
+    image: postgres:13
+    environment:
+      - POSTGRES_DB=timely-db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - timely-backend-swarm
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+  timely_todo-list-swarm:
+    image: ghcr.io/mcesarczyk/timely-todo-list-standalone:latest
+    ports:
+      - 3011:8080
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=http://timely_api-swarm:4000
+    networks:
+      - timely-frontend-swarm
+    depends_on:
+      - timely_api-swarm
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 2
+      restart_policy:
+        condition: on-failure
+
+  timely_api-swarm:
+    image: ghcr.io/mcesarczyk/timely-api-standalone:latest
+    ports:
+      - 4011:4000
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@timely_db-swarm:5432/timely-db?schema=public
+      - PORT=4000
+    networks:
+      - timely-backend-swarm
+    depends_on:
+      - timely_db-swarm
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+
+  visualizer-swarm:
+    image: dockersamples/visualizer:stable
+    ports:
+      - "8011:8080"
+    stop_grace_period: 1m30s
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+networks:
+  timely-frontend-swarm:
+  timely-backend-swarm:
+
+volumes:
+  db-data:
