@@ -1,9 +1,49 @@
 services:
+  todo-list:
+    image: ghcr.io/mcesarczyk/timely-todo-list-standalone:latest
+    container_name: todo-list
+    ports:
+      - 3011:8080
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=http://timely-api:4000
+    networks:
+      - timely-frontend
+    depends_on:
+      - timely-api
+
+  timely-api:
+    image: ghcr.io/mcesarczyk/timely-api-standalone:latest
+    container_name: timely-api
+    ports:
+      - 4011:4000
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@timely-db:5432/timely-db?schema=public
+      - PORT=4000
+    networks:
+      - timely-backend
+      - timely-frontend
+    depends_on:
+      - timely-db
+      - migrator
+
+  migrator:
+    image: ghcr.io/mcesarczyk/timely-api-standalone-migrator:latest
+    container_name: timely-api-migrator
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@timely-db:5432/timely-db?schema=public
+    depends_on:
+      - timely-db
+    networks:
+      - timely-backend
+
   timely-db:
     image: postgres:13
-    container_name: timely-db-compose
+    container_name: timely-db
     environment:
-      - POSTGRES_DB=timely-db-compose
+      - POSTGRES_DB=timely-db
+      - POSTGRES_HOST=timely-db
+      - DB_NAME=timely-db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     volumes:
@@ -12,33 +52,6 @@ services:
       - 5411:5432
     networks:
       - timely-backend
-
-  todo-list:
-    image: ghcr.io/mcesarczyk/timely-todo-list-standalone:latest
-    container_name: todo-list-compose
-    ports:
-      - 3011:8080
-    environment:
-      - NODE_ENV=production
-      - VITE_API_URL=http://timely-api-compose:4000
-    networks:
-      - timely-frontend
-    depends_on:
-      - timely-api
-
-  timely-api:
-    image: ghcr.io/mcesarczyk/timely-api-standalone:latest
-    container_name: timely-api-compose
-    ports:
-      - 4011:4000
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@timely-db-compose:5432/timely-db-compose?schema=public
-      - PORT=4000
-    networks:
-      - timely-backend
-      - timely-frontend
-    depends_on:
-      - timely-db
 
 networks:
   timely-frontend:
