@@ -1,57 +1,127 @@
-version: "3"
+version: "3.8"
+
 services:
-  timely_db-swarm:
+  todo-list:
+    image: ghcr.io/mcesarczyk/timely-todo-list-standalone:latest
+    container_name: todo-list
+    ports:
+      - target: 8080
+        published: 3011
+        protocol: tcp
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=http://timely-api:4000
+    networks:
+      - timely-frontend
+    depends_on:
+      - timely-api
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+      placement:
+        constraints:
+          - node.role == worker
+
+  timely-api:
+    image: ghcr.io/mcesarczyk/timely-api-standalone:latest
+    container_name: timely-api
+    ports:
+      - target: 4000
+        published: 4011
+        protocol: tcp
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@timely_timely-db:5432/timely-db?schema=public
+      - PORT=4000
+    networks:
+      - timely-backend
+      - timely-frontend
+    depends_on:
+      - timely-db
+      - migrator
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+      placement:
+        constraints:
+          - node.role == worker
+
+  migrator:
+    image: ghcr.io/mcesarczyk/timely-api-standalone-migrator:latest
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@timely_timely-db:5432/timely-db?schema=public
+    networks:
+      - timely-backend
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: none
+      placement:
+        constraints:
+          - node.role == manager
+    command:
+      - sh
+      - -c
+      - "sleep 10 && npx prisma migrate deploy"
+
+  timely-db:
     image: postgres:13
+    container_name: timely-db
     environment:
       - POSTGRES_DB=timely-db
+      - POSTGRES_HOST=timely-db
+      - DB_NAME=timely-db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     volumes:
       - db-data:/var/lib/postgresql/data
-    networks:
-      - timely-backend-swarm
-    deploy:
-      placement:
-        constraints: [node.role == manager]
-
-  timely_todo-list-swarm:
-    image: ghcr.io/mcesarczyk/timely-todo-list-standalone:latest
     ports:
-      - 3011:8080
-    environment:
-      - NODE_ENV=production
-      - VITE_API_URL=http://timely_api-swarm:4000
+      - target: 5432
+        published: 5411
+        protocol: tcp
     networks:
-      - timely-frontend-swarm
-    depends_on:
-      - timely_api-swarm
-    deploy:
-      replicas: 2
-      update_config:
-        parallelism: 2
-      restart_policy:
-        condition: on-failure
-
-  timely_api-swarm:
-    image: ghcr.io/mcesarczyk/timely-api-standalone:latest
-    ports:
-      - 4011:4000
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@timely_db-swarm:5432/timely-db?schema=public
-      - PORT=4000
-    networks:
-      - timely-backend-swarm
-    depends_on:
-      - timely_db-swarm
+      - timely-backend
     deploy:
       replicas: 1
-      update_config:
-        parallelism: 2
-        delay: 10s
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 180s
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
 
-  visualizer-swarm:
+  visualizer:
     image: dockersamples/visualizer:stable
     ports:
       - "8011:8080"
@@ -63,8 +133,11 @@ services:
         constraints: [node.role == manager]
 
 networks:
-  timely-frontend-swarm:
-  timely-backend-swarm:
+  timely-frontend:
+    driver: overlay
+  timely-backend:
+    driver: overlay
 
 volumes:
   db-data:
+    driver: local
